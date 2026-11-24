@@ -37,7 +37,7 @@ const ENTRY_WINDOW_SLOTS = 3;
 // Flow filter, all measured on the coin's tape since its CreateEvent.
 const MIN_BUYERS = 4; // distinct non-creator buyers
 const MIN_TRADES = 3; // trades of either side
-const MIN_NET_FLOW_LAMPORTS = 6n * LAMPORTS_PER_SOL; // net buys, last 5 slots
+const MIN_NET_FLOW_LAMPORTS = 10n * LAMPORTS_PER_SOL; // net buys, last 5 slots
 const FLOW_WINDOW_SLOTS = 5;
 const MAX_CREATOR_BUYS_LAMPORTS = 2_500_000_000n; // 2.5 SOL
 // Real SOL reserves must sit inside this band at entry time.
