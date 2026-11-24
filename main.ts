@@ -30,8 +30,11 @@ const STAKE_LAMPORTS = 300_000_000n; // 0.3 SOL
 // mint at 1% of its real SOL reserve, so a small coin's stake is built up in
 // pieces across batches instead of all at once.
 const MIN_PIECE_LAMPORTS = 2_000_000n; // 0.002 SOL
+// Largest buy piece: the stake is built in equal pieces of at most this,
+// so no single piece takes the whole top of the spike at once.
+const MAX_PIECE_LAMPORTS = 50_000_000n; // 0.05 SOL
 // How many buy pieces one entry may be split into at most.
-const MAX_SPLITS = 1;
+const MAX_SPLITS = 6;
 // Entry window: the coin must still be this fresh when we first buy it.
 const ENTRY_WINDOW_SLOTS = 3;
 // Flow filter, all measured on the coin's tape since its CreateEvent.
@@ -44,7 +47,7 @@ const MAX_CREATOR_BUYS_LAMPORTS = 2_500_000_000n; // 2.5 SOL
 const MIN_REAL_SOL_LAMPORTS = 300_000_000n; // 0.3 SOL
 const MAX_REAL_SOL_LAMPORTS = 30n * LAMPORTS_PER_SOL; // 30 SOL
 // Exits, measured against the virtual price (SOL per token) at entry.
-const TAKE_PROFIT_NUM = 120n; // +15%
+const TAKE_PROFIT_NUM = 115n; // +15%
 const STOP_LOSS_NUM = 80n; // -20%
 const PRICE_DEN = 100n;
 const MAX_HOLD_SLOTS = 10;
@@ -224,7 +227,8 @@ await runBot({
         const cap = state.maxBuyLamports(mint);
         if (cap < MIN_PIECE_LAMPORTS) continue;
         if (state.freeCashLamports() < MIN_PIECE_LAMPORTS) continue;
-        const piece = cap < STAKE_LAMPORTS ? cap : STAKE_LAMPORTS;
+        let piece = cap < STAKE_LAMPORTS ? cap : STAKE_LAMPORTS;
+        if (piece > MAX_PIECE_LAMPORTS) piece = MAX_PIECE_LAMPORTS;
         const spend = piece < state.freeCashLamports() ? piece : state.freeCashLamports();
         if (spend < MIN_PIECE_LAMPORTS) continue;
         bought.add(mint);
@@ -247,13 +251,10 @@ await runBot({
     }
 
     // --- top-ups: keep building an open entry toward the full stake, one
-    // piece per batch, while the per-batch reserve cap allows a real piece.
-    // Only add while the coin is at or below the decision price: the spike
-    // mean-reverts, so the retracement is the cheaper place to build, and
-    // chasing higher prices is where the money leaked. A plan whose first
-    // buy was rejected or failed simply retries here while the entry is
-    // still young; a plan whose position was sold is already gone from
-    // entries, so it never tops up.
+    // equal piece per batch, while the per-batch reserve cap allows a real
+    // piece. A plan whose first buy was rejected or failed simply retries
+    // here while the entry is still young; a plan whose position was sold
+    // is already gone from entries, so it never tops up.
     for (const [mint, entry] of entries) {
       if (orders.length >= state.hello.caps.max_orders_per_batch) break;
       if (ordered.has(mint)) continue;
@@ -264,13 +265,11 @@ await runBot({
       if (curve === undefined || curve.complete) continue;
       const tape = tapes.get(mint);
       if (tape !== undefined && tape.creatorSold) continue;
-      const price = priceOf(state, mint);
-      if (price === null) continue;
-      if (!atLeast(entry.priceNum, entry.priceDen, price.num, price.den)) continue;
       const cap = state.maxBuyLamports(mint);
       if (cap < MIN_PIECE_LAMPORTS) continue;
       if (state.freeCashLamports() < MIN_PIECE_LAMPORTS) continue;
       let piece = cap < entry.remaining ? cap : entry.remaining;
+      if (piece > MAX_PIECE_LAMPORTS) piece = MAX_PIECE_LAMPORTS;
       if (piece > state.freeCashLamports()) piece = state.freeCashLamports();
       if (piece < MIN_PIECE_LAMPORTS) continue;
       entry.remaining -= piece;
