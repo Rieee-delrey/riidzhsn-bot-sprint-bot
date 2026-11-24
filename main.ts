@@ -31,7 +31,7 @@ const STAKE_LAMPORTS = 300_000_000n; // 0.3 SOL
 // pieces across batches instead of all at once.
 const MIN_PIECE_LAMPORTS = 2_000_000n; // 0.002 SOL
 // How many buy pieces one entry may be split into at most.
-const MAX_SPLITS = 1;
+const MAX_SPLITS = 6;
 // Entry window: the coin must still be this fresh when we first buy it.
 const ENTRY_WINDOW_SLOTS = 3;
 // Flow filter, all measured on the coin's tape since its CreateEvent.
@@ -248,9 +248,12 @@ await runBot({
 
     // --- top-ups: keep building an open entry toward the full stake, one
     // piece per batch, while the per-batch reserve cap allows a real piece.
-    // A plan whose first buy was rejected or failed simply retries here
-    // while the entry is still young; a plan whose position was sold is
-    // already gone from entries, so it never tops up.
+    // Only add while the coin is at or above the decision price: adding
+    // below it averages down into a fade, and the no-top-up run showed the
+    // blind pieces are where the money leaks. A plan whose first buy was
+    // rejected or failed simply retries here while the entry is still young;
+    // a plan whose position was sold is already gone from entries, so it
+    // never tops up.
     for (const [mint, entry] of entries) {
       if (orders.length >= state.hello.caps.max_orders_per_batch) break;
       if (ordered.has(mint)) continue;
@@ -261,6 +264,9 @@ await runBot({
       if (curve === undefined || curve.complete) continue;
       const tape = tapes.get(mint);
       if (tape !== undefined && tape.creatorSold) continue;
+      const price = priceOf(state, mint);
+      if (price === null) continue;
+      if (!atLeast(price.num, price.den, entry.priceNum, entry.priceDen)) continue;
       const cap = state.maxBuyLamports(mint);
       if (cap < MIN_PIECE_LAMPORTS) continue;
       if (state.freeCashLamports() < MIN_PIECE_LAMPORTS) continue;
