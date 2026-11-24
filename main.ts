@@ -148,6 +148,10 @@ await runBot({
   onBatch(state: BotState, batch: Batch): OrderInput[] {
     const orders: OrderInput[] = [];
     const slot = batch.slot;
+    // Mints already ordered in this reply: the harness caps all buys on one
+    // mint in one reply together, so a second buy for the same mint in the
+    // same batch would only be rejected.
+    const ordered = new Set<string>();
 
     // Take the new tape in first, so this slot's trades count for decisions
     // made on this same batch.
@@ -166,6 +170,7 @@ await runBot({
             token_amount: holding.token_amount,
             max_slippage_bps: SLIPPAGE_BPS,
           });
+          ordered.add(mint);
         }
         continue;
       }
@@ -188,6 +193,7 @@ await runBot({
           token_amount: holding.token_amount,
           max_slippage_bps: SLIPPAGE_BPS,
         });
+        ordered.add(mint);
         entries.delete(mint);
         exited.add(mint);
       }
@@ -230,6 +236,7 @@ await runBot({
           priceDen: price.den,
         });
         committed += 1;
+        ordered.add(mint);
         orders.push({
           side: 'buy',
           mint,
@@ -246,6 +253,7 @@ await runBot({
     // already gone from entries, so it never tops up.
     for (const [mint, entry] of entries) {
       if (orders.length >= state.hello.caps.max_orders_per_batch) break;
+      if (ordered.has(mint)) continue;
       if (entry.remaining < MIN_PIECE_LAMPORTS) continue;
       if (entry.splits >= MAX_SPLITS) continue;
       if (slot - entry.entrySlot > MAX_HOLD_SLOTS) continue;
@@ -261,6 +269,7 @@ await runBot({
       if (piece < MIN_PIECE_LAMPORTS) continue;
       entry.remaining -= piece;
       entry.splits += 1;
+      ordered.add(mint);
       orders.push({
         side: 'buy',
         mint,
