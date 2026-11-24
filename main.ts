@@ -47,7 +47,7 @@ const MAX_REAL_SOL_LAMPORTS = 30n * LAMPORTS_PER_SOL; // 30 SOL
 const TAKE_PROFIT_NUM = 115n; // +15%
 const STOP_LOSS_NUM = 80n; // -20%
 const PRICE_DEN = 100n;
-const MAX_HOLD_SLOTS = 10;
+const MAX_HOLD_SLOTS = 5;
 // Both sides accept any fill the harness offers.
 const SLIPPAGE_BPS = 10_000;
 
