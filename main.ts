@@ -31,7 +31,7 @@ const STAKE_LAMPORTS = 300_000_000n; // 0.3 SOL
 // pieces across batches instead of all at once.
 const MIN_PIECE_LAMPORTS = 2_000_000n; // 0.002 SOL
 // How many buy pieces one entry may be split into at most.
-const MAX_SPLITS = 6;
+const MAX_SPLITS = 1;
 // Entry window: the coin must still be this fresh when we first buy it.
 const ENTRY_WINDOW_SLOTS = 3;
 // Flow filter, all measured on the coin's tape since its CreateEvent.
@@ -44,7 +44,7 @@ const MAX_CREATOR_BUYS_LAMPORTS = 2_500_000_000n; // 2.5 SOL
 const MIN_REAL_SOL_LAMPORTS = 300_000_000n; // 0.3 SOL
 const MAX_REAL_SOL_LAMPORTS = 30n * LAMPORTS_PER_SOL; // 30 SOL
 // Exits, measured against the virtual price (SOL per token) at entry.
-const TAKE_PROFIT_NUM = 115n; // +15%
+const TAKE_PROFIT_NUM = 120n; // +15%
 const STOP_LOSS_NUM = 80n; // -20%
 const PRICE_DEN = 100n;
 const MAX_HOLD_SLOTS = 10;
