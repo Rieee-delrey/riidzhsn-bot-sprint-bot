@@ -37,7 +37,7 @@ const ENTRY_WINDOW_SLOTS = 3;
 // Flow filter, all measured on the coin's tape since its CreateEvent.
 const MIN_BUYERS = 4; // distinct non-creator buyers
 const MIN_TRADES = 3; // trades of either side
-const MIN_NET_FLOW_LAMPORTS = 12n * LAMPORTS_PER_SOL; // net buys, last 5 slots
+const MIN_NET_FLOW_LAMPORTS = 8n * LAMPORTS_PER_SOL; // net buys, last 5 slots
 const FLOW_WINDOW_SLOTS = 5;
 const MAX_CREATOR_BUYS_LAMPORTS = 2_500_000_000n; // 2.5 SOL
 // Real SOL reserves must sit inside this band at entry time.
@@ -64,15 +64,16 @@ interface Tape {
   flowBySlot: Map<number, bigint>;
 }
 
-// One entry plan: the stake we are still trying to build, the slot we
-// entered on (for the max-hold clock), and the virtual price (SOL per
-// token) at the moment we decided to enter. Profit and loss are measured
-// against that decision-time price: on a fast coin the burst that made the
-// tape hot is the move to bank, and waiting for +15% over the (later, higher)
-// fill price just lets the coin retrace to the stop.
+// One entry plan: the stake we are still trying to build (tracked as what
+// the fills actually spent, so a rejected or failed order never eats the
+// stake), the slot we entered on (for the max-hold clock), and the virtual
+// price (SOL per token) at the moment we decided to enter. Profit and loss
+// are measured against that decision-time price: on a fast coin the burst
+// that made the tape hot is the move to bank, and waiting for +15% over the
+// (later, higher) fill price just lets the coin retrace to the stop.
 interface Entry {
-  remaining: bigint;
-  splits: number;
+  spent: bigint; // SOL actually spent on filled buys, fees included
+  splits: number; // buy pieces sent so far, entry buy included
   entrySlot: number;
   priceNum: bigint; // virtual quote reserves at first buy decision
   priceDen: bigint; // virtual token reserves at first buy decision
@@ -161,6 +162,15 @@ await runBot({
     // made on this same batch.
     for (const event of batch.events) foldEvent(event);
 
+    // Book the buys that resolved since the last batch: only filled buys
+    // count toward the stake, so a rejected or failed piece can be retried
+    // instead of silently eating the target.
+    for (const fill of batch.fills) {
+      if (fill.side !== 'buy' || fill.status !== 'filled') continue;
+      const entry = entries.get(fill.mint);
+      if (entry !== undefined) entry.spent += BigInt(fill.quote_lamports);
+    }
+
     // --- exits: sell everything that hit a rule, before spending anything new.
     for (const [mint, holding] of state.positions) {
       const tape = tapes.get(mint);
@@ -233,7 +243,7 @@ await runBot({
         if (spend < MIN_PIECE_LAMPORTS) continue;
         bought.add(mint);
         entries.set(mint, {
-          remaining: STAKE_LAMPORTS - spend,
+          spent: 0n,
           splits: 1,
           entrySlot: slot,
           priceNum: price.num,
@@ -251,14 +261,18 @@ await runBot({
     }
 
     // --- top-ups: keep building an open entry toward the full stake, one
-    // piece per batch, while the per-batch reserve cap allows a real piece.
-    // A plan whose first buy was rejected or failed simply retries here
-    // while the entry is still young; a plan whose position was sold is
-    // already gone from entries, so it never tops up.
+    // piece at a time, each sized off what the fills actually spent. A new
+    // piece only goes out once the previous one has resolved: with 2 slots
+    // of latency, sending a piece every batch would stack blind buys into
+    // a moving price. A plan whose first buy was rejected or failed simply
+    // retries here while the entry is still young; a plan whose position
+    // was sold is already gone from entries, so it never tops up.
     for (const [mint, entry] of entries) {
       if (orders.length >= state.hello.caps.max_orders_per_batch) break;
       if (ordered.has(mint)) continue;
-      if (entry.remaining < MIN_PIECE_LAMPORTS) continue;
+      if (hasPendingBuy(state, mint)) continue;
+      const remaining = STAKE_LAMPORTS - entry.spent;
+      if (remaining < MIN_PIECE_LAMPORTS) continue;
       if (entry.splits >= MAX_SPLITS) continue;
       if (slot - entry.entrySlot > MAX_HOLD_SLOTS) continue;
       const curve = state.curves.get(mint);
@@ -268,10 +282,9 @@ await runBot({
       const cap = state.maxBuyLamports(mint);
       if (cap < MIN_PIECE_LAMPORTS) continue;
       if (state.freeCashLamports() < MIN_PIECE_LAMPORTS) continue;
-      let piece = cap < entry.remaining ? cap : entry.remaining;
+      let piece = cap < remaining ? cap : remaining;
       if (piece > state.freeCashLamports()) piece = state.freeCashLamports();
       if (piece < MIN_PIECE_LAMPORTS) continue;
-      entry.remaining -= piece;
       entry.splits += 1;
       ordered.add(mint);
       orders.push({
@@ -285,3 +298,10 @@ await runBot({
     return orders;
   },
 });
+
+function hasPendingBuy(state: BotState, mint: string): boolean {
+  for (const pending of state.pending.values()) {
+    if (pending.order.side === 'buy' && pending.order.mint === mint) return true;
+  }
+  return false;
+}
