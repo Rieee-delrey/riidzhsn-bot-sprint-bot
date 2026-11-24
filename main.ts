@@ -248,7 +248,9 @@ await runBot({
 
     // --- top-ups: keep building an open entry toward the full stake, one
     // piece per batch, while the per-batch reserve cap allows a real piece.
-    // A plan whose first buy was rejected or failed simply retries here
+    // All of it stays inside the entry window: the stake is built while the
+    // opening crowd is still hot, never averaged into a coin that has gone
+    // cold. A plan whose first buy was rejected or failed simply retries here
     // while the entry is still young; a plan whose position was sold is
     // already gone from entries, so it never tops up.
     for (const [mint, entry] of entries) {
@@ -256,7 +258,7 @@ await runBot({
       if (ordered.has(mint)) continue;
       if (entry.remaining < MIN_PIECE_LAMPORTS) continue;
       if (entry.splits >= MAX_SPLITS) continue;
-      if (slot - entry.entrySlot > MAX_HOLD_SLOTS) continue;
+      if (slot - entry.entrySlot > ENTRY_WINDOW_SLOTS) continue;
       const curve = state.curves.get(mint);
       if (curve === undefined || curve.complete) continue;
       const tape = tapes.get(mint);
