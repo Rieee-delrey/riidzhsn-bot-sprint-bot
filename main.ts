@@ -248,12 +248,12 @@ await runBot({
 
     // --- top-ups: keep building an open entry toward the full stake, one
     // piece per batch, while the per-batch reserve cap allows a real piece.
-    // Only add while the coin is at or above the decision price: adding
-    // below it averages down into a fade, and the no-top-up run showed the
-    // blind pieces are where the money leaks. A plan whose first buy was
-    // rejected or failed simply retries here while the entry is still young;
-    // a plan whose position was sold is already gone from entries, so it
-    // never tops up.
+    // Only add while the coin is at or below the decision price: the spike
+    // mean-reverts, so the retracement is the cheaper place to build, and
+    // chasing higher prices is where the money leaked. A plan whose first
+    // buy was rejected or failed simply retries here while the entry is
+    // still young; a plan whose position was sold is already gone from
+    // entries, so it never tops up.
     for (const [mint, entry] of entries) {
       if (orders.length >= state.hello.caps.max_orders_per_batch) break;
       if (ordered.has(mint)) continue;
@@ -266,7 +266,7 @@ await runBot({
       if (tape !== undefined && tape.creatorSold) continue;
       const price = priceOf(state, mint);
       if (price === null) continue;
-      if (!atLeast(price.num, price.den, entry.priceNum, entry.priceDen)) continue;
+      if (!atLeast(entry.priceNum, entry.priceDen, price.num, price.den)) continue;
       const cap = state.maxBuyLamports(mint);
       if (cap < MIN_PIECE_LAMPORTS) continue;
       if (state.freeCashLamports() < MIN_PIECE_LAMPORTS) continue;
