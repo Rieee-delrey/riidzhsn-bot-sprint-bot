@@ -43,7 +43,7 @@ const MAX_CREATOR_BUYS_LAMPORTS = 2_500_000_000n; // 2.5 SOL
 // Real SOL reserves must sit inside this band at entry time.
 const MIN_REAL_SOL_LAMPORTS = 300_000_000n; // 0.3 SOL
 const MAX_REAL_SOL_LAMPORTS = 30n * LAMPORTS_PER_SOL; // 30 SOL
-// Exits, measured against the position's cost basis (see Entry above).
+// Exits, measured against the virtual price (SOL per token) at entry.
 const TAKE_PROFIT_NUM = 115n; // +15%
 const STOP_LOSS_NUM = 80n; // -20%
 const PRICE_DEN = 100n;
@@ -64,15 +64,18 @@ interface Tape {
   flowBySlot: Map<number, bigint>;
 }
 
-// One entry plan: the stake we are still trying to build, and the slot we
-// entered on (for the max-hold clock). Profit and loss are measured against
-// the real cost basis — what the fills actually paid — never against the
-// price at decision time: a buy fills two slots after we decide, and on a
-// fast coin the price has already moved by then.
+// One entry plan: the stake we are still trying to build, the slot we
+// entered on (for the max-hold clock), and the virtual price (SOL per
+// token) at the moment we decided to enter. Profit and loss are measured
+// against that decision-time price: on a fast coin the burst that made the
+// tape hot is the move to bank, and waiting for +15% over the (later, higher)
+// fill price just lets the coin retrace to the stop.
 interface Entry {
   remaining: bigint;
   splits: number;
   entrySlot: number;
+  priceNum: bigint; // virtual quote reserves at first buy decision
+  priceDen: bigint; // virtual token reserves at first buy decision
 }
 
 const tapes = new Map<string, Tape>();
@@ -129,6 +132,20 @@ function recentFlow(tape: Tape, slot: number): bigint {
   return total;
 }
 
+// Current virtual price of a mint, SOL per token, as a ratio. Null when the
+// curve has no usable reserves.
+function priceOf(state: BotState, mint: string): { num: bigint; den: bigint } | null {
+  const curve = state.curves.get(mint);
+  if (curve === undefined) return null;
+  if (curve.virtual_quote_reserves <= 0n || curve.virtual_token_reserves <= 0n) return null;
+  return { num: curve.virtual_quote_reserves, den: curve.virtual_token_reserves };
+}
+
+// a/b >= c/d, cross-multiplied so no floating point ever appears.
+function atLeast(aNum: bigint, aDen: bigint, bNum: bigint, bDen: bigint): boolean {
+  return aNum * bDen >= bNum * aDen;
+}
+
 // --------------------------------------------------------------------- bot
 
 await runBot({
@@ -162,21 +179,16 @@ await runBot({
         continue;
       }
       if (tape === undefined) continue;
-      const curve = state.curves.get(mint);
+      const price = priceOf(state, mint);
       let exit = false;
       // The creator sold while we hold: get out now.
       if (tape.creatorSold) exit = true;
       // Never hold longer than MAX_HOLD_SLOTS past the entry slot.
       if (!exit && slot - entry.entrySlot >= MAX_HOLD_SLOTS) exit = true;
-      // Take profit / stop loss against the cost basis: the position is
-      // worth tokens * virtualQuote / virtualToken lamports, and it cost
-      // cost_lamports. Compare cross-multiplied, no floating point.
-      if (!exit && curve !== undefined && curve.virtual_token_reserves > 0n) {
-        const valueNum = holding.token_amount * curve.virtual_quote_reserves;
-        const valueDen = curve.virtual_token_reserves;
-        const cost = holding.cost_lamports;
-        if (valueNum * PRICE_DEN >= cost * TAKE_PROFIT_NUM * valueDen) exit = true;
-        if (!exit && valueNum * PRICE_DEN <= cost * STOP_LOSS_NUM * valueDen) exit = true;
+      // Take profit / stop loss against the decision-time price.
+      if (!exit && price !== null) {
+        if (atLeast(price.num, price.den, entry.priceNum * TAKE_PROFIT_NUM, entry.priceDen * PRICE_DEN)) exit = true;
+        if (!exit && atLeast(entry.priceNum * STOP_LOSS_NUM, entry.priceDen * PRICE_DEN, price.num, price.den)) exit = true;
       }
       if (exit) {
         orders.push({
@@ -211,6 +223,8 @@ await runBot({
         if (recentFlow(tape, slot) < MIN_NET_FLOW_LAMPORTS) continue;
         const realSol = curve.real_quote_reserves;
         if (realSol < MIN_REAL_SOL_LAMPORTS || realSol > MAX_REAL_SOL_LAMPORTS) continue;
+        const price = priceOf(state, mint);
+        if (price === null) continue;
         const cap = state.maxBuyLamports(mint);
         if (cap < MIN_PIECE_LAMPORTS) continue;
         if (state.freeCashLamports() < MIN_PIECE_LAMPORTS) continue;
@@ -222,6 +236,8 @@ await runBot({
           remaining: STAKE_LAMPORTS - spend,
           splits: 1,
           entrySlot: slot,
+          priceNum: price.num,
+          priceDen: price.den,
         });
         committed += 1;
         ordered.add(mint);
@@ -236,9 +252,7 @@ await runBot({
 
     // --- top-ups: keep building an open entry toward the full stake, one
     // piece per batch, while the per-batch reserve cap allows a real piece.
-    // All of it stays inside the entry window: the stake is built while the
-    // opening crowd is still hot, never averaged into a coin that has gone
-    // cold. A plan whose first buy was rejected or failed simply retries here
+    // A plan whose first buy was rejected or failed simply retries here
     // while the entry is still young; a plan whose position was sold is
     // already gone from entries, so it never tops up.
     for (const [mint, entry] of entries) {
@@ -246,7 +260,7 @@ await runBot({
       if (ordered.has(mint)) continue;
       if (entry.remaining < MIN_PIECE_LAMPORTS) continue;
       if (entry.splits >= MAX_SPLITS) continue;
-      if (slot - entry.entrySlot > ENTRY_WINDOW_SLOTS) continue;
+      if (slot - entry.entrySlot > MAX_HOLD_SLOTS) continue;
       const curve = state.curves.get(mint);
       if (curve === undefined || curve.complete) continue;
       const tape = tapes.get(mint);
