@@ -44,7 +44,7 @@ const MAX_CREATOR_BUYS_LAMPORTS = 2_500_000_000n; // 2.5 SOL
 const MIN_REAL_SOL_LAMPORTS = 300_000_000n; // 0.3 SOL
 const MAX_REAL_SOL_LAMPORTS = 30n * LAMPORTS_PER_SOL; // 30 SOL
 // Exits, measured against the virtual price (SOL per token) at entry.
-const TAKE_PROFIT_NUM = 120n; // +15%
+const TAKE_PROFIT_NUM = 115n; // +15%
 const STOP_LOSS_NUM = 80n; // -20%
 const PRICE_DEN = 100n;
 const MAX_HOLD_SLOTS = 10;
