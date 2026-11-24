@@ -31,7 +31,7 @@ const STAKE_LAMPORTS = 300_000_000n; // 0.3 SOL
 // pieces across batches instead of all at once.
 const MIN_PIECE_LAMPORTS = 2_000_000n; // 0.002 SOL
 // How many buy pieces one entry may be split into at most.
-const MAX_SPLITS = 6;
+const MAX_SPLITS = 1;
 // Entry window: the coin must still be this fresh when we first buy it.
 const ENTRY_WINDOW_SLOTS = 3;
 // Flow filter, all measured on the coin's tape since its CreateEvent.
