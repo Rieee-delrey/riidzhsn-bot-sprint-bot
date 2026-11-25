@@ -11,14 +11,18 @@ A launch sniper for [Pump.fun Bot Sprint: Make Bot And Win](https://make.fun/bou
 Watch every new pump.fun bonding curve from its CreateEvent and buy once per
 coin, within 3 slots of creation, only when the opening tape shows a real
 crowd: at least 4 distinct non-creator buyers, at least 3 trades, net buy
-flow of at least 8 SOL over the last 5 slots, the creator still holding (no
+flow of at least 12 SOL over the last 5 slots, the creator still holding (no
 creator sell, creator buys at most 2.5 SOL), and real SOL reserves between
-0.3 and 30 SOL.
+0.3 and 30 SOL. The flow bar was swept on the dev data (6/8/10/12/14 SOL):
+12 SOL is where the net peaks; hotter still leaves too few coins.
 
-Stake 0.3 SOL per coin, built up in pieces where the per-batch reserve cap
-requires it. Take profit at +15%, stop loss at -20%, max hold 10 slots, and
-exit immediately if the creator sells while holding. Never buy the same mint
-twice.
+Stake 0.3 SOL per coin in a single buy (whatever the per-batch reserve cap
+allows in one order), retried while the entry window is open if it is
+rejected or its transaction fails, but never topped up: building the stake
+past the first piece buys the top of a spike that is about to mean-revert,
+and every form of that lost money on the dev data. Take profit at +10%,
+stop loss at -20%, max hold 10 slots, and exit immediately if the creator
+sells while holding. Never buy the same mint twice.
 
 The bot is deterministic: every decision is a pure function of the event
 batches, with no clock, no randomness, and no I/O.

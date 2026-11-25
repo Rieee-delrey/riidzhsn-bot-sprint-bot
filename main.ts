@@ -7,7 +7,7 @@
 // buy flow over the last 5 slots, and a creator who is still holding instead
 // of dumping or loading up. We risk a fixed 0.3 SOL per coin in a single
 // buy (whatever the per-batch reserve cap allows in one order), take profit
-// at +15%, cut at -20%, never hold longer than 10 slots, and dump
+// at +10%, cut at -20%, never hold longer than 10 slots, and dump
 // immediately if the creator sells while we hold. The entry piece is
 // retried while the entry window is open if it is rejected or its
 // transaction fails, but it is never topped up: building the stake past the
@@ -53,7 +53,7 @@ const MAX_CREATOR_BUYS_LAMPORTS = 2_500_000_000n; // 2.5 SOL
 const MIN_REAL_SOL_LAMPORTS = 300_000_000n; // 0.3 SOL
 const MAX_REAL_SOL_LAMPORTS = 30n * LAMPORTS_PER_SOL; // 30 SOL
 // Exits, measured against the virtual price (SOL per token) at entry.
-const TAKE_PROFIT_NUM = 110n; // +15%
+const TAKE_PROFIT_NUM = 110n; // +10%
 const STOP_LOSS_NUM = 80n; // -20%
 const PRICE_DEN = 100n;
 const MAX_HOLD_SLOTS = 10;
